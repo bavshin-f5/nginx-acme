@@ -15,7 +15,6 @@ use http_body::Body;
 use http_body_util::BodyExt;
 use nginx_sys::{ngx_log_t, ngx_resolver_t, NGX_LOG_WARN};
 use ngx::allocator::Box;
-use ngx::async_::spawn;
 use ngx::ngx_log_error;
 use thiserror::Error;
 
@@ -161,23 +160,24 @@ impl HttpClient for NgxHttpClient<'_> {
 
         let (mut sender, conn) = hyper::client::conn::http1::handshake(peer).await?;
 
-        let log = self.log;
-        spawn(async move {
-            if let Err(err) = conn.await {
-                ngx_log_error!(NGX_LOG_WARN, log.as_ptr(), "connection error: {err}");
-            }
+        let (conn, resp) = futures_lite::future::zip(conn, async move {
+            let resp = sender.send_request(req).await?;
+            let (parts, body) = resp.into_parts();
+
+            let body = http_body_util::Limited::new(body, NGX_ACME_MAX_BODY_SIZE)
+                .collect()
+                .await
+                .map_err(HttpClientError::Body)?
+                .to_bytes();
+
+            Ok(Response::from_parts(parts, body))
         })
-        .detach();
+        .await;
 
-        let resp = sender.send_request(req).await?;
-        let (parts, body) = resp.into_parts();
+        if let Err(err) = conn {
+            ngx_log_error!(NGX_LOG_WARN, self.log.as_ptr(), "connection error: {err}");
+        }
 
-        let body = http_body_util::Limited::new(body, NGX_ACME_MAX_BODY_SIZE)
-            .collect()
-            .await
-            .map_err(HttpClientError::Body)?
-            .to_bytes();
-
-        Ok(Response::from_parts(parts, body))
+        resp
     }
 }
