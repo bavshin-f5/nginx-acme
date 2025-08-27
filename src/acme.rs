@@ -188,6 +188,8 @@ where
                 )
                 .body(body)?;
 
+            ngx_log_debug!(self.log.as_ptr(), "acme http >> {req:?}");
+
             let res = match self.http.request(req).await {
                 Ok(res) => res,
                 Err(err) => {
@@ -201,6 +203,8 @@ where
                     }
                 }
             };
+
+            ngx_log_debug!(self.log.as_ptr(), "acme http << {res:?}");
 
             if res.status().is_success() {
                 break res;
