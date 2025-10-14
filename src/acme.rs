@@ -661,7 +661,16 @@ pub fn make_certificate_request<A: Allocator>(
     req.add_extensions(&extensions)?;
 
     req.set_pubkey(pkey)?;
-    req.sign(pkey, openssl::hash::MessageDigest::sha256())?;
+
+    // ML-DSA does not support explicitly specified digest.
+
+    let md = if matches!(order.key, crate::conf::pkey::PrivateKey::MlDsa(_)) {
+        openssl::hash::MessageDigest::null()
+    } else {
+        openssl::hash::MessageDigest::sha256()
+    };
+
+    req.sign(pkey, md)?;
     Ok(req.build())
 }
 

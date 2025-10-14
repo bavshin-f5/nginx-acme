@@ -72,7 +72,14 @@ fn detect_nginx_features() {
 /// Detects libssl implementation and version.
 fn detect_libssl_features() {
     // OpenSSL
-    let openssl_features = ["awslc", "boringssl", "libressl", "openssl", "openssl111"];
+    let openssl_features = [
+        "awslc",
+        "boringssl",
+        "libressl",
+        "openssl",
+        "openssl111",
+        "openssl300",
+    ];
     let openssl_version = env::var("DEP_OPENSSL_VERSION_NUMBER").unwrap_or_default();
     let openssl_version = u64::from_str_radix(&openssl_version, 16).unwrap_or(0);
 
@@ -91,6 +98,10 @@ fn detect_libssl_features() {
     } else {
         if openssl_version >= 0x01_01_01_00_0 {
             println!("cargo::rustc-cfg=openssl=\"openssl111\"");
+        }
+
+        if openssl_version >= 0x03_00_00_00_0 {
+            println!("cargo::rustc-cfg=openssl=\"openssl300\"");
         }
 
         "openssl"
