@@ -12,27 +12,49 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: 'always'
+  GO: go125
   NGINX_SOURCE_DIR: nginx
   TEST_NGINX_GLOBALS: 'user root nobody;'
+  BUILDREQUIRES_FREEBSD: >-
+    git-lite
+    go125
+    llvm19-lite
+    p5-Digest-SHA
+    p5-IO-Socket-INET6
+    p5-IO-Socket-SSL
+    p5-JSON-PP
+    pcre2
+    pkgconf
+    rust
+  BUILDREQUIRES_NETBSD: >-
+    clang
+    git-base
+    go125
+    p5-IO-Socket-INET6
+    p5-IO-Socket-SSL
+    pcre2
+    pkgconf
+    rust
 
 jobs:
-  freebsd:
-    name: FreeBSD
+  test:
     runs-on: ubuntu-latest
-    env:
-      GO: go125
-      BUILDREQUIRES: >-
-        git
-        go125
-        llvm
-        p5-Digest-SHA
-        p5-IO-Socket-INET6
-        p5-IO-Socket-SSL
-        p5-JSON-PP
-        pcre2
-        pkgconf
-        rust
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - name: freebsd
+            version: '15.0'
+          - name: netbsd
+            version: '10.1'
+        nginx-ref:
+          - stable-1.28
+        build:
+          - debug
 
+    defaults:
+      run:
+        shell: ${{ matrix.os.name }} {0}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
@@ -45,51 +67,58 @@ jobs:
           repository: 'nginx/nginx-tests'
           path: 'nginx/tests'
 
-      - uses: vmactions/freebsd-vm@80bcb19d617fe71c9db00e6297b16fb184dac498 # v1.4.1
+      - uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
         with:
-          copyback: false
+          path: |
+            bin/pebble
+            nginx/objs/**/CACHEDIR.TAG
+            nginx/objs/**/ngx-debug
+            nginx/objs/**/ngx-release
+            target/
+          key: ${{ matrix.os.name }}-${{ matrix.os.version }}-nginx-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ matrix.os.name }}-${{ matrix.os.version }}-nginx-
+
+      - name: start FreeBSD VM
+        if: matrix.os.name == 'freebsd'
+        uses: vmactions/freebsd-vm@4807432c7cab1c3f97688665332c0b932062d31f # v1.4.3
+        with:
           envs: 'CARGO_TERM_COLOR NGINX_SOURCE_DIR TEST_NGINX_GLOBALS GO'
+          release: ${{ matrix.os.version }}
+          sync: rsync
+          copyback: false # not needed with custom shell
           prepare: |
-            pkg install -y ${{ env.BUILDREQUIRES }}
-          run: |
-            TEST_NGINX_PEBBLE_BINARY=$(perl build/get-pebble.pl)
-            export TEST_NGINX_PEBBLE_BINARY
-            make
+            pkg install -y ${{ env.BUILDREQUIRES_FREEBSD }}
+            perl build/get-pebble.pl
 
-  netbsd:
-    name: NetBSD
-    runs-on: ubuntu-latest
-    env:
-      GO: go125
-      BUILDREQUIRES: >-
-        clang
-        git
-        go125
-        p5-IO-Socket-INET6
-        p5-IO-Socket-SSL
-        pcre2
-        pkgconf
-        rust
-
-    steps:
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: start NetBSD VM
+        if: matrix.os.name == 'netbsd'
+        uses: vmactions/netbsd-vm@ca7ff0556959998c82761c34ea0c3c99fa084c48 # v1.3.7
         with:
-          ref: ${{ matrix.nginx-ref }}
-          repository: 'nginx/nginx'
-          path: 'nginx'
-      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-        with:
-          repository: 'nginx/nginx-tests'
-          path: 'nginx/tests'
-
-      - uses: vmactions/netbsd-vm@88a20b128e1d7fa463bb361afe4167733c55b86a # v1.3.5
-        with:
-          copyback: false
           envs: 'CARGO_TERM_COLOR NGINX_SOURCE_DIR TEST_NGINX_GLOBALS GO'
+          release: ${{ matrix.os.version }}
+          sync: rsync
+          copyback: false # not needed with custom shell
           prepare: |
-            /usr/sbin/pkg_add -u ${{ env.BUILDREQUIRES }}
-          run: |
-            TEST_NGINX_PEBBLE_BINARY=$(perl build/get-pebble.pl)
-            export TEST_NGINX_PEBBLE_BINARY
-            make
+            /usr/sbin/pkg_add -u ${{ env.BUILDREQUIRES_NETBSD }}
+            perl build/get-pebble.pl
+
+      - name: build
+        run: |
+          cd $GITHUB_WORKSPACE
+          make BUILD=${{ matrix.build }} -j $(getconf NPROCESSORS_ONLN) build
+
+      - name: check
+        run: |
+          cd $GITHUB_WORKSPACE
+          make BUILD=${{ matrix.build }} check
+
+      - name: run tests
+        run: |
+          cd $GITHUB_WORKSPACE
+          TEST_NGINX_PEBBLE_BINARY=$(perl build/get-pebble.pl)
+          export TEST_NGINX_PEBBLE_BINARY
+          make BUILD=${{ matrix.build }} TEST_PREREQ= test
+
+      - name: sync files
+        shell: bash
+        run: rsync -az --exclude .git -e ssh "${{ matrix.os.name }}:$GITHUB_WORKSPACE/" "$GITHUB_WORKSPACE/"
