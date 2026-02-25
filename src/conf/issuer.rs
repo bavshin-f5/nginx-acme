@@ -23,12 +23,12 @@ use openssl::pkey::{PKey, Private};
 use thiserror::Error;
 use zeroize::Zeroizing;
 
-use super::ext::NgxConfExt;
 use super::order::CertificateOrder;
 use super::pkey::PrivateKey;
 use super::ssl::NgxSsl;
 use super::AcmeMainConfig;
 use crate::acme::ChallengeKind;
+use crate::ext::nginx::NgxConfExt;
 use crate::state::certificate::{CertificateContext, CertificateContextInner};
 use crate::state::issuer::{IssuerContext, IssuerState};
 use crate::time::{Interval, Timestamp};

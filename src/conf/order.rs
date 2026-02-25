@@ -14,9 +14,9 @@ use ngx::core::{NgxString, Pool};
 use siphasher::sip::SipHasher;
 use thiserror::Error;
 
-use crate::conf::ext::NgxConfExt;
 use crate::conf::identifier::Identifier;
 use crate::conf::pkey::PrivateKey;
+use crate::ext::nginx::NgxConfExt;
 
 #[derive(Clone, Debug)]
 pub struct CertificateOrder<S, A>

@@ -11,7 +11,7 @@ use nginx_sys::{ngx_conf_full_name, ngx_conf_t, ngx_log_t, ngx_pool_t, ngx_str_t
 use ngx::allocator::{AllocError, Allocator, Box};
 use ngx::core::{Pool, Status};
 
-use crate::conf::ext::NgxConfExt;
+use crate::ext::nginx::NgxConfExt;
 
 pub mod future;
 
