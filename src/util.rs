@@ -12,7 +12,7 @@ use ngx::allocator::{AllocError, Allocator, Box};
 use ngx::core::{Pool, Status};
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
-use crate::conf::ext::NgxConfExt;
+use crate::ext::nginx::NgxConfExt;
 
 pub mod future;
 

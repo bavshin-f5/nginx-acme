@@ -17,16 +17,15 @@ use ngx::core::{NGX_CONF_ERROR, NGX_CONF_OK, Pool, Status};
 use ngx::http::{HttpModuleMainConf, HttpModuleServerConf};
 use ngx::{ngx_conf_log_error, ngx_string};
 
-use self::ext::NgxConfExt;
 use self::issuer::Issuer;
 use self::order::CertificateOrder;
 use self::pkey::PrivateKey;
 use self::shared_zone::{ACME_ZONE_NAME, ACME_ZONE_SIZE, SharedZone, acme_zone_min_size};
 use self::ssl::NgxSsl;
 use crate::acme::ChallengeKind;
+use crate::ext::nginx::NgxConfExt;
 use crate::state::AcmeSharedData;
 
-pub mod ext;
 pub mod identifier;
 pub mod issuer;
 pub mod order;
