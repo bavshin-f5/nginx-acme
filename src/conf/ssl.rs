@@ -80,7 +80,7 @@ fn conf_ssl_cache_fetch<T: openssl_foreign_types::ForeignType>(
     ct: ngx_uint_t,
     name: impl AsRef<[u8]>,
 ) -> Result<T, CertificateFetchError> {
-    use crate::conf::ext::NgxConfExt;
+    use crate::ext::nginx::NgxConfExt;
 
     let mut name = unsafe { crate::util::copy_bytes_with_nul(&cf.pool(), name)? };
     let mut err: *mut core::ffi::c_char = ptr::null_mut();

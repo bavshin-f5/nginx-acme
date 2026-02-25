@@ -34,6 +34,7 @@ mod log;
 
 mod acme;
 mod conf;
+mod ext;
 mod jws;
 mod net;
 mod state;
