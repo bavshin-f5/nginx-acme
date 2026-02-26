@@ -27,6 +27,7 @@ use self::resource::{AccountStatus, AuthorizationStatus, ChallengeStatus, OrderS
 use crate::conf::identifier::Identifier;
 use crate::conf::issuer::{CertificateChainMatcher, Issuer, Profile};
 use crate::conf::order::CertificateOrder;
+use crate::ext::openssl::PKeyRefExt;
 use crate::net::http::HttpClient;
 use crate::state::certificate::CertificateIdentifier;
 use crate::time::Timestamp;
@@ -714,7 +715,8 @@ pub fn make_certificate_request<A: Allocator>(
     req.add_extensions(&extensions)?;
 
     req.set_pubkey(pkey)?;
-    req.sign(pkey, openssl::hash::MessageDigest::sha256())?;
+    req.sign(pkey, pkey.default_digest())?;
+
     Ok(req.build())
 }
 

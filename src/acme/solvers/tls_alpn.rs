@@ -35,7 +35,6 @@ use ngx::http::{HttpModuleMainConf, HttpModuleServerConf};
 use ngx::sync::RwLock;
 use openssl::asn1::Asn1Time;
 use openssl::error::ErrorStack;
-use openssl::hash::MessageDigest;
 use openssl::pkey::{PKey, Private};
 use openssl::x509::{self, extension as x509_ext, X509};
 use openssl_foreign_types::ForeignType;
@@ -47,6 +46,7 @@ use crate::acme;
 use crate::acme::resource::{Challenge, ChallengeKind};
 use crate::conf::identifier::Identifier;
 use crate::conf::AcmeMainConfig;
+use crate::ext::openssl::PKeyRefExt;
 
 const SHA256_DIGEST_LENGTH: usize = 0x20;
 
@@ -634,7 +634,8 @@ pub fn make_challenge_cert(
     let acme_identifier = x509::X509Extension::new_from_der(&oid, true, &digest)?;
     cert_builder.append_extension(acme_identifier)?;
 
-    cert_builder.sign(pkey, MessageDigest::sha256())?;
+    cert_builder.sign(pkey, pkey.default_digest())?;
+
     Ok(cert_builder.build())
 }
 
