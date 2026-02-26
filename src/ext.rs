@@ -6,3 +6,4 @@
 //! Extensions for external types.
 
 pub mod nginx;
+pub mod openssl;

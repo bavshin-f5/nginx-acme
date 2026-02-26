@@ -29,6 +29,7 @@ use super::ssl::NgxSsl;
 use super::AcmeMainConfig;
 use crate::acme::ChallengeKind;
 use crate::ext::nginx::NgxConfExt;
+use crate::ext::openssl::X509RefExt;
 use crate::state::certificate::{CertificateContext, CertificateContextInner};
 use crate::state::issuer::{IssuerContext, IssuerState};
 use crate::time::{Interval, Timestamp};
@@ -443,10 +444,6 @@ impl StateDir {
         cf: &mut ngx_conf_t,
         order: &CertificateOrder<&'static str, Pool>,
     ) -> Result<CertificateContextInner<Pool>, CachedCertificateError> {
-        use openssl_foreign_types::ForeignType;
-        #[cfg(ngx_ssl_cache)]
-        use openssl_foreign_types::ForeignTypeRef;
-
         let name = order.cache_key();
 
         let cert = std::format!("{}/{}.crt", self.0.name, name);
@@ -465,9 +462,7 @@ impl StateDir {
             stack.get(0).ok_or(super::ssl::CertificateFetchError::Fetch(c"no certificates"))?;
         let pkey = super::ssl::conf_read_private_key(cf, &key)?;
 
-        if unsafe { openssl_sys::X509_check_private_key(cert.as_ptr(), pkey.as_ptr()) } != 1 {
-            return Err(CachedCertificateError::Mismatch(openssl::error::ErrorStack::get()));
-        }
+        cert.check_private_key(&pkey).map_err(CachedCertificateError::Mismatch)?;
 
         let valid = Interval::from_x509(cert).unwrap_or_default();
         let temp_alloc = unsafe { Pool::from_ngx_pool(cf.temp_pool) };
