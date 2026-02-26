@@ -6,9 +6,17 @@
 //! Extensions for [openssl] types.
 
 use openssl::error::ErrorStack;
-use openssl::pkey::{PKeyRef, Private};
+use openssl::hash::MessageDigest;
+use openssl::pkey::{Id, PKeyRef, Private};
 use openssl::x509::X509Ref;
 use openssl_foreign_types::ForeignTypeRef;
+
+#[cfg(openssl = "boringssl")]
+pub const ML_DSA_44: Id = Id::from_raw(967);
+#[cfg(openssl = "boringssl")]
+pub const ML_DSA_65: Id = Id::from_raw(968);
+#[cfg(openssl = "boringssl")]
+pub const ML_DSA_87: Id = Id::from_raw(969);
 
 /// Additional methods for the [X509Ref] type.
 pub trait X509RefExt {
@@ -28,6 +36,90 @@ impl X509RefExt for X509Ref {
         ossl_check(unsafe { openssl_sys::X509_check_private_key(self.as_ptr(), pkey.as_ptr()) })?;
 
         Ok(())
+    }
+}
+
+/// Signs the X509_REQ with a default message digest associated with the `pkey`.
+pub fn x509_req_sign_with_default_digest(
+    req: &mut openssl::x509::X509ReqBuilder,
+    pkey: &PKeyRef<Private>,
+) -> Result<(), ErrorStack> {
+    // SAFETY: the MessageDigest will be immediately unwrapped and passed to X509_REQ_sign.
+    let md = unsafe { default_digest(pkey) };
+    req.sign(pkey, md)
+}
+
+/// Signs the X509 with a default message digest associated with the `pkey`.
+pub fn x509_sign_with_default_digest(
+    x509: &mut openssl::x509::X509Builder,
+    pkey: &PKeyRef<Private>,
+) -> Result<(), ErrorStack> {
+    // SAFETY: the MessageDigest will be immediately unwrapped and passed to X509_sign.
+    let md = unsafe { default_digest(pkey) };
+    x509.sign(pkey, md)
+}
+
+/// Returns the default message digest for the public key signature operations associated with
+/// the `pkey`.
+///
+/// # Safety
+///
+/// The function may return a MessageDigest that violates its safety requirements.
+/// Such a digest cannot be used for any purpose other than passing to BoringSSL's `X509_sign`.
+unsafe fn default_digest(pkey: &PKeyRef<Private>) -> MessageDigest {
+    match pkey.id() {
+        // Well-known algorithms.
+        Id::RSA | Id::EC => MessageDigest::sha256(),
+
+        // BoringSSL supports ML-DSA, but it lacks means to query the preferred digest. Instead,
+        // it recommends to pass NULL to the sign function, making it pick the default.
+        // NULL is also very much not a valid, safe or acceptable value for MessageDigest.
+        #[cfg(openssl = "boringssl")]
+        ML_DSA_44 | ML_DSA_65 | ML_DSA_87 => unsafe { MessageDigest::from_ptr(core::ptr::null()) },
+
+        // OpenSSL 3.0 or later can tell us the preferred digest name.
+        // We'll fallback to SHA256 and let X509_sign() report any errors if unavailable.
+        #[cfg(openssl = "openssl300")]
+        _ => default_digest_ossl300(pkey).unwrap_or_else(MessageDigest::sha256),
+
+        // Anything that we want to support that is available in OpenSSL before 3.0 should be
+        // compatible with SHA256.
+        #[cfg(not(openssl = "openssl300"))]
+        _ => MessageDigest::sha256(),
+    }
+}
+
+#[cfg(openssl = "openssl300")]
+fn default_digest_ossl300(pkey: &PKeyRef<Private>) -> Option<MessageDigest> {
+    use openssl_sys::{ERR_clear_error, EVP_PKEY_get_default_digest_name, EVP_get_digestbyname};
+
+    // 80 is a magic buffer size from the OpenSSL examples.
+    // We expect either "SHA256" or "UNDEF", with both names being slightly shorter than 80.
+    let mut buf = [0u8; 80];
+    match unsafe {
+        EVP_PKEY_get_default_digest_name(pkey.as_ptr(), buf.as_mut_ptr().cast(), buf.len())
+    } {
+        1 | 2 => {
+            let mdname = core::ffi::CStr::from_bytes_until_nul(&buf).unwrap_or_default();
+
+            if mdname == c"UNDEF" {
+                // A digest must (2) or may (1) be left unspecified.
+                Some(MessageDigest::null())
+            } else {
+                // Call ffi directly to avoid reallocation in MessageDigest::from_name().
+                let md = unsafe { EVP_get_digestbyname(mdname.as_ptr()) };
+                if md.is_null() { None } else { Some(unsafe { MessageDigest::from_ptr(md) }) }
+            }
+        }
+        // The operation is not supported by the public key algorithm.
+        -2 => {
+            unsafe { ERR_clear_error() };
+            Some(MessageDigest::null())
+        }
+        _ => {
+            unsafe { ERR_clear_error() };
+            None
+        }
     }
 }
 

@@ -712,7 +712,8 @@ pub fn make_certificate_request<A: Allocator>(
     req.add_extensions(&extensions)?;
 
     req.set_pubkey(pkey)?;
-    req.sign(pkey, openssl::hash::MessageDigest::sha256())?;
+    crate::ext::openssl::x509_req_sign_with_default_digest(&mut req, pkey)?;
+
     Ok(req.build())
 }
 
