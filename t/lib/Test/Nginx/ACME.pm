@@ -28,11 +28,13 @@ Test::More::plan(skip_all => "IO::Socket::SSL not installed") if $@;
 eval { require JSON::PP; };
 Test::More::plan(skip_all => "JSON::PP not installed") if $@;
 
-our $PEBBLE = $ENV{TEST_NGINX_PEBBLE_BINARY} // 'pebble';
+our $PEBBLE = _which($ENV{TEST_NGINX_PEBBLE_BINARY} // 'pebble');
+Test::More::plan(skip_all => 'no pebble') unless $PEBBLE;
 
 my %features = (
 	'ari' => '2.8.0', # custom ARI responses (pebble#501)
 	'eab' => '2.5.2', # broken in 2.5.0
+	'mldsa' => ['2.10.2', 'go1.27'],
 	'profile' => '2.7.0',
 	'validity' => '2.4.0',
 );
@@ -118,7 +120,7 @@ sub trusted_ca {
 
 	return $self->{_roots}->{$chain} if $self->{_roots}->{$chain};
 
-	Test::Nginx::log_core('|| ACME: get certificate from', $self->{mgmt});
+	log2c('ACME: get certificate from ' . $self->{mgmt});
 
 	my $cert = _get_body($self->{mgmt}, '/roots/' . $chain)
 		or die "Can't get trusted CA certificate $chain from pebble";
@@ -192,45 +194,96 @@ sub has {
 
 sub has_feature {
 	my ($self, $feature) = @_;
-	my $ver;
+	my $f = $features{$feature} // $feature;
 
-	if (defined $features{$feature}) {
-		$ver = $features{$feature};
-	} elsif ($feature =~ /^pebble:([\d.]+)$/) {
-		$ver = $1;
-	} else {
-		return 0;
+	if (ref $f eq 'ARRAY') {
+		return @{$f} == grep { $self->has_feature($_) } @{$f};
 	}
 
-	$self->{_version} //= _pebble_version();
-	return 0 unless $self->{_version};
-
-	my @v = split(/\./, $self->{_version});
-	my ($n, $v);
-
-	for my $n (split(/\./, $ver)) {
-		$v = shift @v || 0;
-		return 0 if $n > $v;
-		return 1 if $v > $n;
-	}
-
-	return 1;
+	return _vercmp(_golang_version(), $1) >= 0 if $f =~ /^go(\d[\d.]*)$/;
+	return ($f =~ /^\d[\d.]*$/) && _vercmp(_pebble_version(), $f) >= 0;
 }
 
 ###############################################################################
 
+my $golang_ver;
+my $pebble_ver;
+
+sub log2c { Test::Nginx::log_core('||', @_); }
+
+sub _golang_version {
+	return $golang_ver if defined $golang_ver;
+
+	my ($b, $fh);
+
+	unless (open($fh, '<:raw', $PEBBLE)) {
+		log2c("ACME: failed to get Go version from $PEBBLE: $!");
+		return ($golang_ver = '0');
+	}
+
+	# The proper way to check this is `go version $PEBBLE`, but we cannot
+	# rely on the presence of Go toolchain in the test environment.
+
+	while ($fh && read($fh, $b, 4 * 1024, $b ? 16 : 0)) {
+		if ($b =~ /\bgo(\d+\.[\d.]+)/) {
+			log2c("ACME: Go version $1");
+			return ($golang_ver = $1);
+		}
+
+		$b = substr($b, -16);
+	}
+
+	log2c("ACME: failed to get Go version from $PEBBLE");
+	return ($golang_ver = '0');
+}
+
 sub _pebble_version {
+	return $pebble_ver if defined $pebble_ver;
+
 	my $ver = `$PEBBLE -version 2>&1`;
 
 	if ($ver =~ /version: v?([\d.]+)/) {
-		Test::Nginx::log_core('|| ACME: pebble version', $1);
-		return $1;
+		$pebble_ver = $1;
 	} elsif (defined $ver) {
-		# The binary is available, but does not have the version info.
-		Test::Nginx::log_core('|| ACME: pebble version unknown');
-		return '0';
+		# The binary is available, but does not have the version info
+		$pebble_ver = '0';
+	}
+
+	log2c("ACME: pebble version $pebble_ver");
+	return $pebble_ver;
+}
+
+sub _vercmp {
+	my ($x, $y) = @_;
+
+	my @x = split(/\./, $x // '');
+
+	foreach (split(/\./, $y)) {
+		my $v = shift @x;
+		return -1 if !defined($v) || $v < $_;
+		return  1 if $v > $_;
+	}
+
+	return scalar(@x) ? 1 : 0;
+}
+
+sub _which {
+	my ($name) = @_;
+
+	# Real %PATHEXT% would have unnecessary things such as .vbs, .js, etc.
+	my @PATHEXT = $^O eq 'MSWin32' ? ('.com', '.exe', '.bat') : ();
+
+	foreach my $path (File::Spec->path()) {
+		$path = File::Spec->rel2abs( $name, $path );
+		return $path if -x $path;
+
+		foreach my $ext (@PATHEXT) {
+			return $path.$ext if -e $path.$ext;
+		}
 	}
 }
+
+###############################################################################
 
 sub _get_body {
 	my ($port, $uri) = @_;
