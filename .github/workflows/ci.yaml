@@ -154,16 +154,12 @@ jobs:
           repository: 'openssl/openssl'
           path: ${{ env.OPENSSL_SOURCE_DIR }}
 
-      - uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9
-        with:
-          toolchain: ${{ matrix.rust-version }}
-          components: clippy, rustfmt
-
-      - uses: perl-actions/install-with-cpm@b7eeb5ea204d9c9bd434e01162ae97629cf7fa36 # v2.4
-        with:
-          install: |
-            IO::Socket::INET6
-            IO::Socket::SSL
+      - name: configure Rust toolchain
+        env:
+          TOOLCHAIN: ${{ matrix.rust-version }}
+        run: |
+          rustup toolchain install --component 'rustfmt,clippy' "${TOOLCHAIN}"
+          rustup default "${TOOLCHAIN}"
 
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -179,6 +175,11 @@ jobs:
             target/
           key: ${{ runner.os }}-nginx-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: ${{ runner.os }}-nginx-
+
+      - name: install Perl modules
+        run: cpan -T IO::Socket::INET6 IO::Socket::SSL
+        env:
+          PERL_MM_USE_DEFAULT: 1
 
       - name: download pebble
         run: |
