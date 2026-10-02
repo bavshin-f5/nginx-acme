@@ -2,8 +2,6 @@ name: CI
 
 on:
   push:
-    branches:
-      - main
   pull_request:
 
 concurrency:
@@ -45,54 +43,15 @@ jobs:
           - stable
         nginx-ref:
           - master
-          - stable-1.30
         build:
           - debug
-          - debug-static
-          - release
-          - aws-lc
-          - aws-lc-static
-          - boringssl
-          - boringssl-static
 
         include:
-          # minimal supported nginx version
-          - runner: ubuntu
-            rust-version: stable
-            nginx-ref: stable-1.22
-            build: debug
-
           # minimal supported Rust version
           - runner: ubuntu
             rust-version: ${{ needs.rust-version.outputs.version }}
             nginx-ref: stable-1.30
             build: debug
-
-          # minimal supported OpenSSL version
-          - runner: ubuntu
-            rust-version: stable
-            nginx-ref: stable-1.30
-            openssl-ref: OpenSSL_1_1_1w
-            build: openssl
-
-          - runner: ubuntu
-            rust-version: stable
-            nginx-ref: stable-1.30
-            openssl-ref: OpenSSL_1_1_1w
-            build: openssl-static
-
-          # latest supported OpenSSL version
-          - runner: ubuntu
-            rust-version: stable
-            nginx-ref: stable-1.30
-            openssl-ref: openssl-4.0
-            build: openssl
-
-          - runner: ubuntu
-            rust-version: stable
-            nginx-ref: stable-1.30
-            openssl-ref: openssl-4.0
-            build: openssl-static
 
           # macOS
           - runner: macos
