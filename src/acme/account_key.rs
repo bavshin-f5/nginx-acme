@@ -10,7 +10,7 @@ use openssl::pkey::{Id, PKeyRef, Private};
 use serde::{Serialize, Serializer};
 use thiserror::Error;
 
-use crate::jws::{JsonWebKey, NewKeyError, ShaWithEcdsaKey, ShaWithRsaKey};
+use crate::jws::{JsonWebKey, MlDsaKey, ShaWithEcdsaKey, ShaWithRsaKey};
 
 #[derive(Debug)]
 pub struct AccountKey {
@@ -30,6 +30,7 @@ pub enum AccountKeyError {
 enum AccountKeyInner {
     ShaWithEcdsa(ShaWithEcdsaKey),
     ShaWithRsa(ShaWithRsaKey),
+    MlDsa(MlDsaKey),
 }
 
 impl AccountKey {
@@ -43,6 +44,7 @@ impl JsonWebKey for AccountKey {
         match self.inner {
             AccountKeyInner::ShaWithEcdsa(ref key) => key.alg(),
             AccountKeyInner::ShaWithRsa(ref key) => key.alg(),
+            AccountKeyInner::MlDsa(ref key) => key.alg(),
         }
     }
 
@@ -50,6 +52,7 @@ impl JsonWebKey for AccountKey {
         match self.inner {
             AccountKeyInner::ShaWithEcdsa(ref key) => key.compute_mac(header, payload),
             AccountKeyInner::ShaWithRsa(ref key) => key.compute_mac(header, payload),
+            AccountKeyInner::MlDsa(ref key) => key.compute_mac(header, payload),
         }
     }
 
@@ -64,6 +67,7 @@ impl Serialize for AccountKey {
         match self.inner {
             AccountKeyInner::ShaWithEcdsa(ref key) => key.serialize(serializer),
             AccountKeyInner::ShaWithRsa(ref key) => key.serialize(serializer),
+            AccountKeyInner::MlDsa(ref key) => key.serialize(serializer),
         }
     }
 }
@@ -75,12 +79,13 @@ impl TryFrom<&PKeyRef<Private>> for AccountKey {
         let inner = match value.id() {
             Id::EC => value.try_into().map(AccountKeyInner::ShaWithEcdsa),
             Id::RSA => value.try_into().map(AccountKeyInner::ShaWithRsa),
-            id => Err(NewKeyError::Algorithm(id)),
+            _ => value.try_into().map(AccountKeyInner::MlDsa),
         }?;
 
         let thumbprint = match inner {
             AccountKeyInner::ShaWithEcdsa(ref key) => key.thumbprint(),
             AccountKeyInner::ShaWithRsa(ref key) => key.thumbprint(),
+            AccountKeyInner::MlDsa(ref key) => key.thumbprint(),
         }?;
 
         Ok(Self { inner, thumbprint })

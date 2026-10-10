@@ -80,6 +80,9 @@ pub(crate) struct ShaWithHmacKey<T>(T, u16)
 where
     T: AsRef<[u8]>;
 
+#[derive(Debug)]
+pub(crate) struct MlDsaKey(PKey<Private>);
+
 #[inline]
 pub fn base64url<T: AsRef<[u8]>>(buf: T) -> String {
     base64::Engine::encode(&base64::engine::general_purpose::URL_SAFE_NO_PAD, buf)
@@ -331,6 +334,74 @@ where
 {
     pub fn new(key: T, bits: u16) -> Self {
         Self(key, bits)
+    }
+}
+
+impl Serialize for MlDsaKey {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        use serde::ser::Error;
+
+        let pubkey = self.0.public_key_to_der().map_err(Error::custom)?;
+        let pubkey = base64url(&pubkey);
+
+        let mut map = serializer.serialize_map(Some(2))?;
+        // order is important for thumbprint generation (RFC7638)
+        map.serialize_entry("alg", self.alg())?;
+        map.serialize_entry("kty", "AKP")?;
+        map.serialize_entry("pub", &pubkey)?;
+        map.end()
+    }
+}
+
+impl JsonWebKey for MlDsaKey {
+    fn alg(&self) -> &str {
+        MlDsaKey::algorithm(&self.0).expect("created with unexpected key algorithm")
+    }
+
+    fn compute_mac(&self, header: &[u8], payload: &[u8]) -> Result<Vec<u8>, Error> {
+        let mut inbuf = vec![0u8; header.len() + 1 + payload.len()];
+        inbuf.extend(header);
+        inbuf.extend(b".");
+        inbuf.extend(payload);
+
+        let mut signer = openssl::sign::Signer::new_without_digest(&self.0)?;
+        let mut buf = vec![0u8; signer.len()?];
+
+        let len = signer.sign_oneshot(&mut buf, &inbuf)?;
+        buf.truncate(len);
+
+        Ok(buf)
+    }
+}
+
+impl TryFrom<&PKeyRef<Private>> for MlDsaKey {
+    type Error = NewKeyError;
+
+    fn try_from(pkey: &PKeyRef<Private>) -> Result<Self, Self::Error> {
+        if Self::algorithm(pkey).is_some() {
+            Ok(Self(pkey.to_owned()))
+        } else {
+            Err(NewKeyError::Algorithm(pkey.id()))
+        }
+    }
+}
+
+impl MlDsaKey {
+    pub fn algorithm(pkey: &PKeyRef<Private>) -> Option<&'static str> {
+        use openssl::pkey::KeyType;
+
+        if pkey.is_a(KeyType::ML_DSA_44) {
+            Some("ML-DSA-44")
+        } else if pkey.is_a(KeyType::ML_DSA_65) {
+            Some("ML-DSA-65")
+        } else if pkey.is_a(KeyType::ML_DSA_87) {
+            Some("ML-DSA-87")
+        } else {
+            None
+        }
     }
 }
 

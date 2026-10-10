@@ -46,6 +46,7 @@ http {
 
     acme_issuer default {
         uri https://acme.test:%%PORT_9000%%/dir;
+        account_key ml-dsa-44;
         ssl_trusted_certificate acme.test.crt;
         state_path %%TESTDIR%%;
         accept_terms_of_service;
