@@ -51,3 +51,16 @@ lto = true
 
 [profile.coverage]
 inherits = "dev"
+
+# Generate limited debug information for --add-module release builds.
+[profile.ngx-release]
+inherits = "release"
+debug = "limited"
+
+# Enable basic optimizations with full debug information and assertions
+# for --with-debug builds
+[profile.ngx-debug]
+inherits = "dev"
+debug = "full"
+incremental = false
+opt-level = 1
